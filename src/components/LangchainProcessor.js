@@ -46,9 +46,9 @@ const LangchainProcessor = async (newMessage, oldMessages = []) => {
       throw new Error("Failed to get a response from the server.");
     }
 
-    console.log("response", responseData);
-
     const responseData = await response.text();
+
+    console.log("response", responseData);
     const parsedData = JSON.parse(responseData);
     return parsedData.text.trim();
   } catch (error) {
