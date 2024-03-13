@@ -1,52 +1,58 @@
-import { ChatOpenAI } from "langchain/chat_models/openai";
-import { HumanMessage, SystemMessage } from "langchain/schema";
+const LangchainProcessor = async (newMessage, oldMessages = []) => {
+  // Check if newMessage contains "thank you" or "thanks"
+  if (
+    newMessage.toLowerCase().includes("thank you") ||
+    newMessage.toLowerCase().includes("thanks")
+  ) {
+    oldMessages = [];
+  }
 
-// using functional components instead of class components to keep it simple here
+  // Construct the history from oldMessages
+  const historyArr = oldMessages.map(
+    (item) => `${item.type === "user" ? "human" : item.type}: ${item.message}`
+  );
 
-// this component is responsible for processing new messages from the user and getting a reply from OpenAI
-// it uses a human/system messages array that is sent in continously to OpenAI
+  // Check if a user message exists in oldMessages
+  const hasPreviousUserMessage = oldMessages.some(
+    (item) => item.type === "user"
+  );
 
-const LangchainProcessor = async (newMessage, oldMessages) => {
+  // Determine the chatHistory based on previous user messages
+  const chatHistory = hasPreviousUserMessage ? historyArr.join("\n") : "";
 
-    // The default prompt template is
-    const promptTemplate = `
-    You are an ironic and nihilistic chatbot so always answer like so. Don't answer in a "response: answer" format.
-    Question: {question}
-    `;
+  // Define the request body
+  const requestBody = {
+    question: newMessage,
+    chatHistory: chatHistory,
+    bucketName: process.env.REACT_APP_AWS_BUCKET_NAME,
+    promptTemplate:
+      "Use the following pieces of context to answer the question at the end. \n {context}\n Question: {question}\nHelpful Answer:",
+    systemTemplate:
+      "I want you to act as a customer service bot called Socky the Happy bot that I am having a conversation with.\nYou are a bot that will provide funny answers to the customer. \n If you can't answer the question say I don't know.",
+  };
 
-    const prompt = promptTemplate.replace("{question}", newMessage);
-
-    const chat = new ChatOpenAI({
-        temperature: 0,
-        openAIApiKey: process.env.REACT_APP_OPEN_AI_API_KEY
+  try {
+    // Send a POST request to the endpoint
+    const response = await fetch(process.env.REACT_APP_AWS_POST_URL, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": process.env.REACT_APP_AWS_API_KEY,
+      },
+      body: JSON.stringify(requestBody),
     });
 
-    try {
-        // recreate the formatted messages array with the previous messages every time a new message comes in from the user
-        const formattedMessages = oldMessages.map(msg => {
-            if (msg.type === "bot") {
-                return new SystemMessage(msg.message);
-            } else {
-                return new HumanMessage(msg.message);
-            }
-        });
-
-        // Add the new human message to the list with the prompt template
-        formattedMessages.push(new HumanMessage(prompt));
-
-        // call OpenAI to get a reply
-        const result = await chat.predictMessages(formattedMessages);
-
-        // Extract the content from the AIMessage
-        const botResponseContent = result.content;
-
-        // return the response
-        return botResponseContent;
-
-    } catch (error) {
-        console.error("Error processing message with OpenAI:", error);
-        return "Sorry, I faced an error processing your message.";
+    if (!response.ok) {
+      throw new Error("Failed to get a response from the server.");
     }
-}
+
+    const responseData = await response.text();
+    const parsedData = JSON.parse(responseData);
+    return parsedData.text.trim();
+  } catch (error) {
+    console.error("Error processing message with OpenAI:", error);
+    return "Sorry, I faced an error processing your message.";
+  }
+};
 
 export default LangchainProcessor;
